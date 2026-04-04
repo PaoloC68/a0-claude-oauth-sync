@@ -323,6 +323,11 @@ def _get_valid_token_locked() -> str | None:
 def _update_cache(creds: dict) -> None:
     global _cache
     oauth = creds.get("claudeAiOauth") or creds
+    if not oauth.get("container_session"):
+        existing = _read_from_cache_file()
+        if existing and existing.get("container_session"):
+            oauth = dict(oauth)
+            oauth["container_session"] = True
     _cache = {
         "access_token": oauth.get("accessToken", ""),
         "refresh_token": oauth.get("refreshToken", ""),
