@@ -7,6 +7,8 @@ import subprocess
 import sys
 import time
 import threading
+import urllib.request
+import urllib.error
 from typing import TypedDict
 
 logger = logging.getLogger(__name__)
@@ -16,6 +18,10 @@ _KEYCHAIN_SERVICE = "Claude Code-credentials"
 _CREDENTIALS_FILE = os.path.expanduser("~/.claude/.credentials.json")
 
 _FIELDS_TO_PRESERVE = ("accessToken", "refreshToken", "expiresAt", "subscriptionType", "rateLimitTier", "scopes")
+
+_OAUTH_TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
+_OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+_OAUTH_SCOPES = "user:inference user:profile user:file_upload user:mcp_servers user:sessions:claude_code"
 
 
 class TokenInfo(TypedDict):
@@ -58,6 +64,8 @@ def get_status() -> dict:
 def force_refresh() -> bool:
     with _cache_lock:
         logger.info("[claude-oauth] Force refresh requested")
+        if _refresh_via_api():
+            return True
         if not _refresh_via_cli():
             return False
         creds = _read_credentials()
@@ -65,6 +73,56 @@ def force_refresh() -> bool:
             return False
         _update_cache(creds)
         return True
+
+
+def _refresh_via_api() -> bool:
+    creds = _read_credentials()
+    if not creds:
+        logger.warning("[claude-oauth] No credentials available for API refresh.")
+        return False
+
+    refresh_token = creds.get("refreshToken")
+    if not refresh_token:
+        logger.warning("[claude-oauth] No refresh token available.")
+        return False
+
+    payload = json.dumps({
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+        "client_id": _OAUTH_CLIENT_ID,
+        "scope": _OAUTH_SCOPES,
+    }).encode()
+
+    req = urllib.request.Request(
+        _OAUTH_TOKEN_URL,
+        data=payload,
+        headers={"Content-Type": "application/json", "anthropic-beta": "oauth-2025-04-20"},
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode())
+
+        new_creds = {
+            "accessToken": data["access_token"],
+            "refreshToken": data.get("refresh_token", refresh_token),
+            "expiresAt": int(time.time() * 1000) + int(data.get("expires_in", 18000)) * 1000,
+            "subscriptionType": creds.get("subscriptionType", "unknown"),
+            "rateLimitTier": creds.get("rateLimitTier", ""),
+            "scopes": creds.get("scopes", []),
+        }
+        _update_cache(new_creds)
+        _write_container_creds_file(new_creds)
+        logger.info("[claude-oauth] Token refreshed via API. New expiry in %d min.", data.get("expires_in", 18000) // 60)
+        return True
+
+    except urllib.error.HTTPError as e:
+        body = e.read().decode(errors="replace")[:300]
+        logger.warning("[claude-oauth] OAuth API refresh failed (%s): %s", e.code, body)
+    except Exception as e:
+        logger.warning("[claude-oauth] OAuth API refresh error: %s", e)
+    return False
 
 
 def install_claude_cli() -> bool:
