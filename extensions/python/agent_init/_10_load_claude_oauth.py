@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import sys
 import os
@@ -14,10 +15,14 @@ if PLUGIN_DIR not in sys.path:
 class LoadClaudeOAuth(Extension):
     async def execute(self, **kwargs):
         try:
-            from claude_oauth_manager import get_valid_token
+            import claude_oauth_manager as m
             from helpers.dotenv import save_dotenv_value
 
-            token = get_valid_token()
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, m.install_claude_cli)
+            await loop.run_in_executor(None, m.bootstrap_container_credentials)
+
+            token = await loop.run_in_executor(None, m.get_valid_token)
             if token:
                 save_dotenv_value("API_KEY_ANTHROPIC_OAUTH", token)
                 logger.info("[claude-oauth] Token loaded and injected into environment.")
