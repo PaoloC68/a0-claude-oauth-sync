@@ -148,11 +148,17 @@ def complete_oauth_login(code: str) -> tuple[bool, str]:
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read().decode())
 
+        granted_scope = data.get("scope", "")
+        logger.info("[claude-oauth] Exchange response scope: %s", granted_scope)
+        logger.info("[claude-oauth] Exchange response keys: %s", list(data.keys()))
+
         new_creds = {
             "accessToken": data["access_token"],
             "refreshToken": data.get("refresh_token", ""),
             "expiresAt": int(time.time() * 1000) + int(data.get("expires_in", 18000)) * 1000,
             "subscriptionType": data.get("account", {}).get("subscription_type", "unknown"),
+            "rateLimitTier": data.get("rate_limit_tier", data.get("rateLimitTier", "")),
+            "scopes": granted_scope.split() if granted_scope else [],
             "container_session": True,
         }
         with _cache_lock:
