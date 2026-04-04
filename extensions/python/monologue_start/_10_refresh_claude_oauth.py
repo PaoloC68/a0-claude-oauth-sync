@@ -15,7 +15,7 @@ _REFRESH_THRESHOLD_MS = 10 * 60 * 1000
 
 
 class RefreshClaudeOAuth(Extension):
-    async def execute(self, **kwargs):
+    def execute(self, **kwargs):
         try:
             import claude_oauth_manager as m
             from helpers.dotenv import save_dotenv_value

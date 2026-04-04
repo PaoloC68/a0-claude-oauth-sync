@@ -12,7 +12,7 @@ if PLUGIN_DIR not in sys.path:
 
 
 class LoadClaudeOAuth(Extension):
-    async def execute(self, **kwargs):
+    def execute(self, **kwargs):
         try:
             import claude_oauth_manager as m
             from helpers.dotenv import save_dotenv_value
