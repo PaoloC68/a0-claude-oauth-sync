@@ -301,9 +301,10 @@ def _read_credentials() -> dict | None:
     if raw is None:
         raw = _read_from_file()
     if raw is None:
-        raw = _read_from_cache_file()
-    if raw is None:
-        raw = _read_from_env()
+        if _is_docker():
+            raw = _read_from_env() or _read_from_cache_file()
+        else:
+            raw = _read_from_cache_file() or _read_from_env()
     if raw is None:
         return None
     if "claudeAiOauth" in raw:
