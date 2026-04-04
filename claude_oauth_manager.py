@@ -83,15 +83,7 @@ def get_status() -> dict:
 
 def force_refresh() -> bool:
     with _cache_lock:
-        if _refresh_via_api():
-            return True
-        if not _refresh_via_cli():
-            return False
-        creds = _read_credentials()
-        if not creds:
-            return False
-        _update_cache(creds)
-        return True
+        return _refresh_via_api()
 
 
 def start_oauth_login() -> dict:
