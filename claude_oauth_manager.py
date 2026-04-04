@@ -96,7 +96,11 @@ def _refresh_via_api() -> bool:
     req = urllib.request.Request(
         _OAUTH_TOKEN_URL,
         data=payload,
-        headers={"Content-Type": "application/json", "anthropic-beta": "oauth-2025-04-20"},
+        headers={
+            "Content-Type": "application/json",
+            "anthropic-beta": "oauth-2025-04-20",
+            "User-Agent": "claude-code/1.0",
+        },
         method="POST",
     )
 
