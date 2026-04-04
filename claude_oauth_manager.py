@@ -28,7 +28,7 @@ _OAUTH_TOKEN_URL = "https://console.anthropic.com/v1/oauth/token"
 _OAUTH_AUTHORIZE_URL = "https://claude.ai/oauth/authorize"
 _OAUTH_MANUAL_REDIRECT = "https://console.anthropic.com/oauth/code/callback"
 _OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-_OAUTH_SCOPES = "org:create_api_key user:profile user:inference"
+_OAUTH_SCOPES = "user:file_upload user:inference user:mcp_servers user:profile user:sessions:claude_code"
 
 
 class TokenInfo(TypedDict):
