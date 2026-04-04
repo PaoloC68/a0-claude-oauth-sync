@@ -1,0 +1,7 @@
+chat:
+  anthropic_oauth:
+    name: Anthropic (OAuth)
+    litellm_provider: anthropic
+    kwargs:
+      extra_headers:
+        "anthropic-beta": "oauth-2025-04-20"

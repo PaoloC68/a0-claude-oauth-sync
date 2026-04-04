@@ -1,0 +1,10 @@
+title: Claude OAuth Sync
+description: >
+  Use your Claude Pro/Max subscription in Agent Zero via OAuth tokens.
+  Reads credentials from the Claude CLI (macOS Keychain or ~/.claude/.credentials.json),
+  refreshes them automatically before they expire, and injects them into the
+  new "Anthropic (OAuth)" provider.
+version: 0.1.0
+settings_sections:
+  - agent
+always_enabled: false
