@@ -15,6 +15,8 @@ _REFRESH_BUFFER_MS = 5 * 60 * 1000
 _KEYCHAIN_SERVICE = "Claude Code-credentials"
 _CREDENTIALS_FILE = os.path.expanduser("~/.claude/.credentials.json")
 
+_FIELDS_TO_PRESERVE = ("accessToken", "refreshToken", "expiresAt", "subscriptionType", "rateLimitTier", "scopes")
+
 
 class TokenInfo(TypedDict):
     access_token: str
@@ -25,6 +27,7 @@ class TokenInfo(TypedDict):
 
 _cache: TokenInfo | None = None
 _cache_lock = threading.Lock()
+_cli_available: bool | None = None
 
 
 def get_valid_token() -> str | None:
@@ -47,6 +50,8 @@ def get_status() -> dict:
             "expires_in_minutes": max(0, int(remaining_ms / 60_000)),
             "subscription_type": _cache.get("subscription_type", "unknown"),
             "token_obtained": info is not None,
+            "cli_installed": bool(_find_claude_bin()),
+            "in_docker": _is_docker(),
         }
 
 
@@ -62,8 +67,122 @@ def force_refresh() -> bool:
         return True
 
 
+def install_claude_cli() -> bool:
+    """Ensure Claude CLI is available. Installs Node.js and the CLI in Docker if missing."""
+    global _cli_available
+
+    if _cli_available is None:
+        _cli_available = bool(_find_claude_bin())
+
+    if _cli_available:
+        return True
+
+    if not _is_docker():
+        logger.warning("[claude-oauth] Claude CLI not found. Install @anthropic-ai/claude-code manually.")
+        return False
+
+    logger.info("[claude-oauth] Installing Node.js and Claude CLI in container...")
+
+    apt = subprocess.run(
+        ["apt-get", "install", "-y", "-q", "nodejs", "npm"],
+        timeout=180, capture_output=True,
+    )
+    if apt.returncode != 0:
+        logger.warning("[claude-oauth] nodejs/npm install failed: %s", apt.stderr.decode(errors="replace")[:300])
+        return False
+
+    npm = subprocess.run(
+        ["npm", "install", "-g", "@anthropic-ai/claude-code"],
+        timeout=180, capture_output=True,
+    )
+    if npm.returncode != 0:
+        logger.warning("[claude-oauth] claude CLI install failed: %s", npm.stderr.decode(errors="replace")[:300])
+        return False
+
+    _cli_available = bool(_find_claude_bin())
+    if _cli_available:
+        logger.info("[claude-oauth] Claude CLI installed successfully.")
+    else:
+        logger.warning("[claude-oauth] Claude CLI installed but binary not found in PATH.")
+    return _cli_available
+
+
+def bootstrap_container_credentials() -> bool:
+    """In Docker: write ~/.claude/.credentials.json from the persisted cache file.
+
+    On every container start the home directory is ephemeral, so we re-hydrate
+    the credentials file from the bind-mounted usr/ cache before running the CLI.
+    """
+    if not _is_docker():
+        return True
+
+    existing = _read_from_file()
+    if existing:
+        oauth = existing.get("claudeAiOauth") or existing
+        if oauth.get("expiresAt", 0) > _now_ms():
+            return True
+
+    cached = _read_from_cache_file()
+    if not cached:
+        logger.warning("[claude-oauth] No cached credentials. Set ANTHROPIC_OAUTH_* env vars or run on Mac first.")
+        return False
+
+    _write_container_creds_file(cached)
+    return True
+
+
 def _now_ms() -> int:
     return int(time.time() * 1000)
+
+
+def _is_docker() -> bool:
+    return os.path.exists("/.dockerenv")
+
+
+def _get_creds_cache_path() -> str:
+    try:
+        from helpers.files import get_abs_path
+        return get_abs_path("usr/.claude-oauth-creds.json")
+    except Exception:
+        return os.path.expanduser("~/.claude-oauth-creds.json")
+
+
+def _read_from_cache_file() -> dict | None:
+    path = _get_creds_cache_path()
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        return data.get("claudeAiOauth") or data
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+
+
+def _write_cache_file(oauth: dict) -> None:
+    path = _get_creds_cache_path()
+    try:
+        payload = {"claudeAiOauth": {k: oauth[k] for k in _FIELDS_TO_PRESERVE if k in oauth}}
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(payload, f, indent=2)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except OSError as e:
+        logger.debug("[claude-oauth] Failed to write cache file: %s", e)
+
+
+def _write_container_creds_file(oauth: dict) -> None:
+    creds_file = _CREDENTIALS_FILE
+    try:
+        os.makedirs(os.path.dirname(creds_file), exist_ok=True)
+        payload = {"claudeAiOauth": {k: oauth[k] for k in _FIELDS_TO_PRESERVE if k in oauth}}
+        tmp = creds_file + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(payload, f, indent=2)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, creds_file)
+        logger.debug("[claude-oauth] Wrote ~/.claude/.credentials.json")
+    except OSError as e:
+        logger.warning("[claude-oauth] Failed to write container credentials: %s", e)
 
 
 def _get_valid_token_locked() -> str | None:
@@ -75,7 +194,7 @@ def _get_valid_token_locked() -> str | None:
 
     creds = _read_credentials()
     if not creds:
-        logger.warning("[claude-oauth] No credentials found from Keychain or file.")
+        logger.warning("[claude-oauth] No credentials found from Keychain, file, or cache.")
         return None
 
     expires_at = creds.get("expiresAt", 0)
@@ -110,6 +229,7 @@ def _update_cache(creds: dict) -> None:
         "expires_at": oauth.get("expiresAt", 0),
         "subscription_type": oauth.get("subscriptionType", "unknown"),
     }
+    _write_cache_file(oauth)
 
 
 def _read_credentials() -> dict | None:
@@ -118,6 +238,10 @@ def _read_credentials() -> dict | None:
         raw = _read_from_keychain()
     if raw is None:
         raw = _read_from_file()
+    if raw is None:
+        raw = _read_from_cache_file()
+    if raw is None:
+        raw = _read_from_env()
     if raw is None:
         return None
     if "claudeAiOauth" in raw:
@@ -150,6 +274,25 @@ def _read_from_file() -> dict | None:
     return None
 
 
+def _read_from_env() -> dict | None:
+    access = os.environ.get("ANTHROPIC_OAUTH_ACCESS_TOKEN") or os.environ.get("API_KEY_ANTHROPIC_OAUTH")
+    refresh = os.environ.get("ANTHROPIC_OAUTH_REFRESH_TOKEN")
+    expires = os.environ.get("ANTHROPIC_OAUTH_EXPIRES_AT")
+
+    if not (access and refresh and expires):
+        return None
+
+    try:
+        return {
+            "accessToken": access,
+            "refreshToken": refresh,
+            "expiresAt": int(expires),
+            "subscriptionType": os.environ.get("ANTHROPIC_OAUTH_SUBSCRIPTION_TYPE", "unknown"),
+        }
+    except ValueError:
+        return None
+
+
 def _refresh_via_cli() -> bool:
     """Run a no-op claude prompt to trigger CLI's internal token refresh.
     Exit 0 = output produced, exit 1 = no output — both indicate success.
@@ -178,8 +321,11 @@ def _find_claude_bin() -> str | None:
     candidates = [
         os.path.expanduser("~/.npm-global/bin/claude"),
         os.path.expanduser("~/.local/bin/claude"),
+        os.path.expanduser("~/.volta/bin/claude"),
         "/usr/local/bin/claude",
         "/usr/bin/claude",
+        "/usr/local/lib/node_modules/.bin/claude",
+        "/usr/lib/node_modules/.bin/claude",
     ]
     for path in candidates:
         if os.path.isfile(path) and os.access(path, os.X_OK):
