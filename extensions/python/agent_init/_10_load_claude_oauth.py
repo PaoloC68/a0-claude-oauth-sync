@@ -20,11 +20,16 @@ class LoadClaudeOAuth(Extension):
             m.install_claude_cli()
             m.bootstrap_container_credentials()
 
-            token = m.get_valid_token()
-            if token:
-                save_dotenv_value("API_KEY_ANTHROPIC_OAUTH", token)
-                logger.info("[claude-oauth] Token loaded and injected into environment.")
+            api_key = m.get_api_key_for_injection()
+            if api_key:
+                save_dotenv_value("API_KEY_ANTHROPIC_OAUTH", api_key)
+                logger.info("[claude-oauth] Derived API key injected (full rate limits).")
             else:
-                logger.warning("[claude-oauth] Could not obtain OAuth token at agent init.")
+                token = m.get_valid_token()
+                if token:
+                    save_dotenv_value("API_KEY_ANTHROPIC_OAUTH", token)
+                    logger.info("[claude-oauth] OAuth token injected (fallback).")
+                else:
+                    logger.warning("[claude-oauth] Could not obtain OAuth token at agent init.")
         except Exception as e:
             logger.warning("[claude-oauth] agent_init hook failed: %s", e)

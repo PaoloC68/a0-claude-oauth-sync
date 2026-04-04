@@ -22,7 +22,7 @@ _KEYCHAIN_SERVICE = "Claude Code-credentials"
 _CREDENTIALS_FILE = os.path.expanduser("~/.claude/.credentials.json")
 _NPM_PREFIX = "/a0/usr/.npm-packages"
 
-_FIELDS_TO_PRESERVE = ("accessToken", "refreshToken", "expiresAt", "subscriptionType", "rateLimitTier", "scopes")
+_FIELDS_TO_PRESERVE = ("accessToken", "refreshToken", "expiresAt", "subscriptionType", "rateLimitTier", "scopes", "api_key")
 
 _OAUTH_TOKEN_URL = "https://console.anthropic.com/v1/oauth/token"
 _OAUTH_AUTHORIZE_URL = "https://claude.ai/oauth/authorize"
@@ -160,6 +160,16 @@ def complete_oauth_login(code: str) -> tuple[bool, str]:
         _write_container_creds_file(new_creds)
         _pending_login = None
         logger.info("[claude-oauth] Container login complete. Independent session established.")
+
+        api_key = _create_api_key(new_creds["accessToken"])
+        if api_key:
+            new_creds["api_key"] = api_key
+            with _cache_lock:
+                _update_cache(new_creds)
+            logger.info("[claude-oauth] API key created from OAuth token — full subscription rate limits.")
+        else:
+            logger.warning("[claude-oauth] Could not create API key; using OAuth token directly (lower rate limits).")
+
         return True, ""
 
     except urllib.error.HTTPError as e:
@@ -169,6 +179,35 @@ def complete_oauth_login(code: str) -> tuple[bool, str]:
     except Exception as e:
         logger.warning("[claude-oauth] Login exchange error: %s", e)
         return False, str(e)
+
+
+def _create_api_key(access_token: str) -> str | None:
+    req = urllib.request.Request(
+        "https://api.anthropic.com/api/oauth/claude_cli/create_api_key",
+        data=b"{}",
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {access_token}",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode())
+        key = data.get("raw_key", "")
+        if key:
+            logger.info("[claude-oauth] Created API key: %s...", key[:20])
+            return key
+    except urllib.error.HTTPError as e:
+        logger.warning("[claude-oauth] create_api_key failed (%s): %s", e.code, e.read().decode(errors="replace")[:200])
+    except Exception as e:
+        logger.warning("[claude-oauth] create_api_key error: %s", e)
+    return None
+
+
+def get_api_key_for_injection() -> str | None:
+    cached = _read_from_cache_file()
+    return cached.get("api_key") if cached else None
 
 
 def install_claude_cli() -> bool:
