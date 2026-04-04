@@ -1,3 +1,4 @@
+name: claude_oauth_sync
 title: Claude OAuth Sync
 description: >
   Use your Claude Pro/Max subscription in Agent Zero via OAuth tokens.
