@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import sys
 import os
@@ -18,11 +17,10 @@ class LoadClaudeOAuth(Extension):
             import claude_oauth_manager as m
             from helpers.dotenv import save_dotenv_value
 
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, m.install_claude_cli)
-            await loop.run_in_executor(None, m.bootstrap_container_credentials)
+            m.install_claude_cli()
+            m.bootstrap_container_credentials()
 
-            token = await loop.run_in_executor(None, m.get_valid_token)
+            token = m.get_valid_token()
             if token:
                 save_dotenv_value("API_KEY_ANTHROPIC_OAUTH", token)
                 logger.info("[claude-oauth] Token loaded and injected into environment.")

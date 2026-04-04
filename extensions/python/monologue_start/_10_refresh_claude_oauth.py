@@ -17,10 +17,10 @@ _REFRESH_THRESHOLD_MS = 10 * 60 * 1000
 class RefreshClaudeOAuth(Extension):
     async def execute(self, **kwargs):
         try:
-            import claude_oauth_manager
+            import claude_oauth_manager as m
             from helpers.dotenv import save_dotenv_value
 
-            cached = claude_oauth_manager._cache
+            cached = m._cache
             if cached is None:
                 return
 
@@ -28,7 +28,7 @@ class RefreshClaudeOAuth(Extension):
             if cached["expires_at"] - now_ms > _REFRESH_THRESHOLD_MS:
                 return
 
-            token = claude_oauth_manager.get_valid_token()
+            token = m.get_valid_token()
             if token:
                 save_dotenv_value("API_KEY_ANTHROPIC_OAUTH", token)
                 logger.info("[claude-oauth] Token refreshed at monologue_start.")
