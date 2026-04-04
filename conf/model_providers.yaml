@@ -1,11 +1,10 @@
 chat:
   anthropic_oauth:
     name: Anthropic (OAuth)
-    litellm_provider: openai
+    litellm_provider: anthropic
     models_list:
       endpoint_url: "https://api.anthropic.com/v1/models"
     kwargs:
-      api_base: https://api.anthropic.com/v1
       extra_headers:
-        "anthropic-version": "2023-06-01"
-        "anthropic-beta": "oauth-2025-04-20"
+        "anthropic-beta": "oauth-2025-04-20,interleaved-thinking-2025-05-14"
+        "user-agent": "claude-cli/2.1.2 (external, cli)"
