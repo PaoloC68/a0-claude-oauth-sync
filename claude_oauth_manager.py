@@ -24,11 +24,11 @@ _NPM_PREFIX = "/a0/usr/.npm-packages"
 
 _FIELDS_TO_PRESERVE = ("accessToken", "refreshToken", "expiresAt", "subscriptionType", "rateLimitTier", "scopes")
 
-_OAUTH_TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
-_OAUTH_AUTHORIZE_URL = "https://platform.claude.com/oauth/authorize"
-_OAUTH_MANUAL_REDIRECT = "https://platform.claude.com/oauth/code/callback"
+_OAUTH_TOKEN_URL = "https://console.anthropic.com/v1/oauth/token"
+_OAUTH_AUTHORIZE_URL = "https://claude.ai/oauth/authorize"
+_OAUTH_MANUAL_REDIRECT = "https://console.anthropic.com/oauth/code/callback"
 _OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-_OAUTH_SCOPES = "user:inference user:profile user:file_upload user:mcp_servers user:sessions:claude_code"
+_OAUTH_SCOPES = "org:create_api_key user:profile user:inference"
 
 
 class TokenInfo(TypedDict):
@@ -102,6 +102,7 @@ def start_oauth_login() -> dict:
     state = secrets.token_urlsafe(32)
 
     params = {
+        "code": "true",
         "client_id": _OAUTH_CLIENT_ID,
         "response_type": "code",
         "code_challenge": code_challenge,
@@ -132,12 +133,14 @@ def complete_oauth_login(code: str) -> tuple[bool, str]:
         return False, "Empty code after stripping. Please copy just the code value."
 
     code_verifier = _pending_login["code_verifier"]
+    state = _pending_login["state"]
     payload = json.dumps({
         "grant_type": "authorization_code",
         "code": clean_code,
         "code_verifier": code_verifier,
         "client_id": _OAUTH_CLIENT_ID,
         "redirect_uri": _OAUTH_MANUAL_REDIRECT,
+        "state": state,
     }).encode()
 
     req = urllib.request.Request(
@@ -145,7 +148,6 @@ def complete_oauth_login(code: str) -> tuple[bool, str]:
         data=payload,
         headers={
             "Content-Type": "application/json",
-            "anthropic-beta": "oauth-2025-04-20",
             "User-Agent": "claude-code/1.0",
         },
         method="POST",
