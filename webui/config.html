@@ -118,6 +118,21 @@
         </div>
     </div>
 
+    <template x-if="oauthStatus && oauthStatus.in_docker && oauthStatus.own_session && loginStep === null">
+        <div class="field">
+            <div class="field-label">
+                <div class="field-title">New Session</div>
+                <div class="field-description">Create a fresh OAuth session with a new rate limit window.</div>
+            </div>
+            <div class="field-control">
+                <button @click="startLogin()"
+                        style="padding:6px 18px;border-radius:4px;border:1px solid #555;background:#2a2a2a;color:#999;cursor:pointer;font-size:13px;">
+                    Create New Session
+                </button>
+            </div>
+        </div>
+    </template>
+
     <template x-if="oauthStatus && oauthStatus.in_docker && !oauthStatus.own_session && loginStep === null">
         <div class="field">
             <div class="field-label">
