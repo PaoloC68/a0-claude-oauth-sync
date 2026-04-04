@@ -28,12 +28,12 @@ class ClaudeLoginHandler(ApiHandler):
                 if not code:
                     return {"ok": False, "error": "No code provided"}
 
-                success = m.complete_oauth_login(code)
+                success, error = m.complete_oauth_login(code)
                 if success:
                     token = m.get_valid_token()
                     if token:
                         save_dotenv_value("API_KEY_ANTHROPIC_OAUTH", token)
-                return {"ok": success, "status": m.get_status()}
+                return {"ok": success, "error": error if not success else "", "status": m.get_status()}
 
             return {"ok": False, "error": f"Unknown action: {action}"}
 

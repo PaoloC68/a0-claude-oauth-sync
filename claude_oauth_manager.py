@@ -117,22 +117,24 @@ def start_oauth_login() -> dict:
     return {"auth_url": auth_url, "state": state}
 
 
-def complete_oauth_login(code: str) -> bool:
+def complete_oauth_login(code: str) -> tuple[bool, str]:
     global _pending_login
     if not _pending_login:
-        logger.warning("[claude-oauth] No pending login. Call start_oauth_login first.")
-        return False
+        return False, "Session expired. Click 'Connect Container' again to restart."
 
     age_ms = _now_ms() - _pending_login.get("started_at", 0)
     if age_ms > 10 * 60 * 1000:
-        logger.warning("[claude-oauth] Login session expired (>10 min).")
         _pending_login = None
-        return False
+        return False, "Login session expired (10 min limit). Click 'Connect Container' again."
+
+    clean_code = code.strip().split("#")[0].split("&")[0].strip()
+    if not clean_code:
+        return False, "Empty code after stripping. Please copy just the code value."
 
     code_verifier = _pending_login["code_verifier"]
     payload = json.dumps({
         "grant_type": "authorization_code",
-        "code": code.strip(),
+        "code": clean_code,
         "code_verifier": code_verifier,
         "client_id": _OAUTH_CLIENT_ID,
         "redirect_uri": _OAUTH_MANUAL_REDIRECT,
@@ -164,14 +166,15 @@ def complete_oauth_login(code: str) -> bool:
         _write_container_creds_file(new_creds)
         _pending_login = None
         logger.info("[claude-oauth] Container login complete. Independent session established.")
-        return True
+        return True, ""
 
     except urllib.error.HTTPError as e:
-        body = e.read().decode(errors="replace")[:300]
+        body = e.read().decode(errors="replace")[:500]
         logger.warning("[claude-oauth] Login exchange failed (%s): %s", e.code, body)
+        return False, f"Anthropic error {e.code}: {body}"
     except Exception as e:
         logger.warning("[claude-oauth] Login exchange error: %s", e)
-    return False
+        return False, str(e)
 
 
 def install_claude_cli() -> bool:
