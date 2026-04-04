@@ -122,7 +122,7 @@ def bootstrap_container_credentials() -> bool:
         if oauth.get("expiresAt", 0) > _now_ms():
             return True
 
-    cached = _read_from_cache_file()
+    cached = _read_from_cache_file() or _read_from_env()
     if not cached:
         logger.warning("[claude-oauth] No cached credentials. Set ANTHROPIC_OAUTH_* env vars or run on Mac first.")
         return False

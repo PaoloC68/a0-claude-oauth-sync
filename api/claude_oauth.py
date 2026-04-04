@@ -22,6 +22,8 @@ class ClaudeOAuthHandler(ApiHandler):
 
             if action == "refresh":
                 loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, m.install_claude_cli)
+                await loop.run_in_executor(None, m.bootstrap_container_credentials)
                 success = await loop.run_in_executor(None, m.force_refresh)
                 if success:
                     token = await loop.run_in_executor(None, m.get_valid_token)
