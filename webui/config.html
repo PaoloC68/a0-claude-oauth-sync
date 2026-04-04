@@ -1,0 +1,108 @@
+<html>
+<head>
+    <title>Claude OAuth Sync</title>
+</head>
+
+<body>
+    <div x-data="{
+        oauthStatus: null,
+        refreshing: false,
+        async loadStatus() {
+            try {
+                const resp = await fetch('/api/plugins/claude-oauth-sync/claude_oauth', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.csrfToken || '' },
+                    body: JSON.stringify({ action: 'status' })
+                });
+                const data = await resp.json();
+                this.oauthStatus = data.status || null;
+            } catch(e) {
+                this.oauthStatus = { status: 'error', message: e.message };
+            }
+        },
+        async forceRefresh() {
+            this.refreshing = true;
+            try {
+                const resp = await fetch('/api/plugins/claude-oauth-sync/claude_oauth', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.csrfToken || '' },
+                    body: JSON.stringify({ action: 'refresh' })
+                });
+                const data = await resp.json();
+                this.oauthStatus = data.status || null;
+            } catch(e) {
+                this.oauthStatus = { status: 'error', message: e.message };
+            } finally {
+                this.refreshing = false;
+            }
+        },
+        statusColor() {
+            if (!this.oauthStatus) return '#888';
+            if (this.oauthStatus.status === 'valid') return '#4caf50';
+            if (this.oauthStatus.status === 'expired') return '#f44336';
+            return '#ff9800';
+        }
+    }" x-init="loadStatus()">
+
+        <div class="section-title">Claude OAuth Sync</div>
+        <div class="section-description">
+            Uses your Claude Pro/Max subscription in Agent Zero via OAuth tokens from the Claude CLI.
+            Select <strong>Anthropic (OAuth)</strong> as the provider in your model settings.
+        </div>
+
+        <div class="field">
+            <div class="field-label">
+                <div class="field-title">Token Status</div>
+                <div class="field-description">Current state of the OAuth token from Claude CLI.</div>
+            </div>
+            <div class="field-control">
+                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                    <template x-if="!oauthStatus">
+                        <span style="color: #888;">Loading...</span>
+                    </template>
+                    <template x-if="oauthStatus">
+                        <span style="display: flex; align-items: center; gap: 8px;">
+                            <span style="width: 10px; height: 10px; border-radius: 50%; display: inline-block;"
+                                  :style="'background:' + statusColor()"></span>
+                            <span x-text="oauthStatus.status" style="font-weight: 600; text-transform: capitalize;"
+                                  :style="'color:' + statusColor()"></span>
+                            <template x-if="oauthStatus.expires_in_minutes > 0">
+                                <span style="color: #aaa; font-size: 13px;"
+                                      x-text="'(' + oauthStatus.expires_in_minutes + ' min remaining)'"></span>
+                            </template>
+                            <template x-if="oauthStatus.subscription_type && oauthStatus.subscription_type !== 'unknown'">
+                                <span style="background: #333; border-radius: 4px; padding: 2px 7px; font-size: 12px; color: #ddd;"
+                                      x-text="oauthStatus.subscription_type"></span>
+                            </template>
+                        </span>
+                    </template>
+                    <button @click="forceRefresh()" :disabled="refreshing"
+                            style="padding: 4px 14px; border-radius: 4px; border: 1px solid #555; background: #2a2a2a; color: #ddd; cursor: pointer; font-size: 13px;">
+                        <span x-text="refreshing ? 'Refreshing...' : 'Refresh Now'"></span>
+                    </button>
+                    <button @click="loadStatus()"
+                            style="padding: 4px 10px; border-radius: 4px; border: 1px solid #555; background: #2a2a2a; color: #999; cursor: pointer; font-size: 13px;">↻</button>
+                </div>
+                <template x-if="oauthStatus && oauthStatus.message">
+                    <div style="margin-top: 8px; color: #ff9800; font-size: 13px;" x-text="oauthStatus.message"></div>
+                </template>
+            </div>
+        </div>
+
+        <div class="field">
+            <div class="field-label">
+                <div class="field-title">How to use</div>
+            </div>
+            <div class="field-control">
+                <ol style="color: #aaa; font-size: 13px; line-height: 1.8; margin: 0; padding-left: 18px;">
+                    <li>Make sure <code>claude</code> CLI is installed and you're logged in (<code>claude</code> in terminal).</li>
+                    <li>Enable this plugin and reload Agent Zero.</li>
+                    <li>In Settings → Models, set provider to <strong>Anthropic (OAuth)</strong>.</li>
+                    <li>No API key needed — the token is injected automatically.</li>
+                </ol>
+            </div>
+        </div>
+
+    </div>
+</body>
+</html>
