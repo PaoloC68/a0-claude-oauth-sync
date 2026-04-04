@@ -1,165 +1,191 @@
 <html>
-<head>
-    <title>Claude OAuth Sync</title>
-</head>
-
+<head><title>Claude OAuth Sync</title></head>
 <body>
-    <div x-data="{
-        oauthStatus: null,
-        refreshing: false,
-        installing: false,
-        async loadStatus() {
-            try {
-                const resp = await fetch('/api/plugins/claude-oauth-sync/claude_oauth', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.csrfToken || '' },
-                    body: JSON.stringify({ action: 'status' })
-                });
-                const data = await resp.json();
-                this.oauthStatus = data.status || null;
-            } catch(e) {
-                this.oauthStatus = { status: 'error', message: e.message };
+<div x-data="{
+    oauthStatus: null,
+    refreshing: false,
+    installing: false,
+    loginStep: null,
+    authUrl: null,
+    loginCode: '',
+    loginError: null,
+    async loadStatus() {
+        try {
+            const r = await fetch('/api/plugins/claude-oauth-sync/claude_oauth', {
+                method: 'POST',
+                headers: {'Content-Type':'application/json','X-CSRF-Token': window.csrfToken||''},
+                body: JSON.stringify({action:'status'})
+            });
+            const d = await r.json();
+            this.oauthStatus = d.status||null;
+        } catch(e) { this.oauthStatus = {status:'error', message:e.message}; }
+    },
+    async forceRefresh() {
+        this.refreshing = true;
+        try {
+            const r = await fetch('/api/plugins/claude-oauth-sync/claude_oauth', {
+                method: 'POST',
+                headers: {'Content-Type':'application/json','X-CSRF-Token': window.csrfToken||''},
+                body: JSON.stringify({action:'refresh'})
+            });
+            const d = await r.json();
+            this.oauthStatus = d.status||null;
+        } catch(e) { this.oauthStatus = {status:'error', message:e.message}; }
+        finally { this.refreshing = false; }
+    },
+    async startLogin() {
+        this.loginError = null;
+        try {
+            const r = await fetch('/api/plugins/claude-oauth-sync/claude_login', {
+                method: 'POST',
+                headers: {'Content-Type':'application/json','X-CSRF-Token': window.csrfToken||''},
+                body: JSON.stringify({action:'start'})
+            });
+            const d = await r.json();
+            if (d.ok) { this.authUrl = d.auth_url; this.loginStep = 'authorize'; }
+            else { this.loginError = d.error; }
+        } catch(e) { this.loginError = e.message; }
+    },
+    async completeLogin() {
+        this.loginError = null;
+        if (!this.loginCode.trim()) { this.loginError = 'Paste the code from the URL.'; return; }
+        try {
+            const r = await fetch('/api/plugins/claude-oauth-sync/claude_login', {
+                method: 'POST',
+                headers: {'Content-Type':'application/json','X-CSRF-Token': window.csrfToken||''},
+                body: JSON.stringify({action:'complete', code: this.loginCode.trim()})
+            });
+            const d = await r.json();
+            if (d.ok) {
+                this.loginStep = 'done';
+                this.oauthStatus = d.status||null;
+                setTimeout(() => { this.loginStep = null; this.authUrl = null; this.loginCode = ''; }, 3000);
+            } else {
+                this.loginError = d.error || 'Exchange failed. Check the code and try again.';
             }
-        },
-        async forceRefresh() {
-            this.refreshing = true;
-            try {
-                const resp = await fetch('/api/plugins/claude-oauth-sync/claude_oauth', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.csrfToken || '' },
-                    body: JSON.stringify({ action: 'refresh' })
-                });
-                const data = await resp.json();
-                this.oauthStatus = data.status || null;
-            } catch(e) {
-                this.oauthStatus = { status: 'error', message: e.message };
-            } finally {
-                this.refreshing = false;
-            }
-        },
-        async installCli() {
-            this.installing = true;
-            try {
-                const resp = await fetch('/api/plugins/claude-oauth-sync/claude_oauth', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.csrfToken || '' },
-                    body: JSON.stringify({ action: 'install' })
-                });
-                const data = await resp.json();
-                this.oauthStatus = data.status || null;
-            } catch(e) {
-                this.oauthStatus = { status: 'error', message: e.message };
-            } finally {
-                this.installing = false;
-            }
-        },
-        statusColor() {
-            if (!this.oauthStatus) return '#888';
-            if (this.oauthStatus.status === 'valid') return '#4caf50';
-            if (this.oauthStatus.status === 'expired') return '#f44336';
-            return '#ff9800';
-        }
-    }" x-init="loadStatus()">
+        } catch(e) { this.loginError = e.message; }
+    },
+    statusColor() {
+        if (!this.oauthStatus) return '#888';
+        if (this.oauthStatus.status === 'valid') return '#4caf50';
+        if (this.oauthStatus.status === 'expired') return '#f44336';
+        return '#ff9800';
+    }
+}" x-init="loadStatus()">
 
-        <div class="section-title">Claude OAuth Sync</div>
-        <div class="section-description">
-            Uses your Claude Pro/Max subscription in Agent Zero via OAuth tokens from the Claude CLI.
-            Select <strong>Anthropic (OAuth)</strong> as the provider in your model settings.
+    <div class="section-title">Claude OAuth Sync</div>
+    <div class="section-description">
+        Use your Claude Pro/Max subscription in Agent Zero.
+        Select <strong>Anthropic (OAuth)</strong> as the provider in model settings.
+    </div>
+
+    <div class="field">
+        <div class="field-label">
+            <div class="field-title">Token Status</div>
+            <div class="field-description">Current OAuth token state.</div>
         </div>
+        <div class="field-control">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                <template x-if="!oauthStatus"><span style="color:#888">Loading...</span></template>
+                <template x-if="oauthStatus">
+                    <span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                        <span style="width:10px;height:10px;border-radius:50%;display:inline-block;flex-shrink:0;" :style="'background:'+statusColor()"></span>
+                        <span x-text="oauthStatus.status" style="font-weight:600;text-transform:capitalize;" :style="'color:'+statusColor()"></span>
+                        <template x-if="oauthStatus.expires_in_minutes > 0">
+                            <span style="color:#aaa;font-size:13px;" x-text="'('+oauthStatus.expires_in_minutes+' min remaining)'"></span>
+                        </template>
+                        <template x-if="oauthStatus.subscription_type && oauthStatus.subscription_type !== 'unknown'">
+                            <span style="background:#333;border-radius:4px;padding:2px 7px;font-size:12px;color:#ddd;" x-text="oauthStatus.subscription_type"></span>
+                        </template>
+                        <template x-if="oauthStatus.in_docker && oauthStatus.own_session">
+                            <span style="background:#1a3a1a;border-radius:4px;padding:2px 7px;font-size:12px;color:#4caf50;">own session ✓</span>
+                        </template>
+                        <template x-if="oauthStatus.in_docker && !oauthStatus.own_session">
+                            <span style="background:#3a2a1a;border-radius:4px;padding:2px 7px;font-size:12px;color:#ff9800;">shared session</span>
+                        </template>
+                    </span>
+                </template>
+                <button @click="forceRefresh()" :disabled="refreshing || (oauthStatus && !oauthStatus.own_session)"
+                        :title="(oauthStatus && !oauthStatus.own_session) ? 'Complete container login first to enable refresh' : ''"
+                        style="padding:4px 14px;border-radius:4px;border:1px solid #555;background:#2a2a2a;color:#ddd;cursor:pointer;font-size:13px;">
+                    <span x-text="refreshing ? 'Refreshing...' : 'Refresh Now'"></span>
+                </button>
+                <button @click="loadStatus()" style="padding:4px 10px;border-radius:4px;border:1px solid #555;background:#2a2a2a;color:#999;cursor:pointer;font-size:13px;">↻</button>
+            </div>
+            <template x-if="oauthStatus && oauthStatus.message">
+                <div style="margin-top:8px;color:#ff9800;font-size:13px;" x-text="oauthStatus.message"></div>
+            </template>
+        </div>
+    </div>
 
+    <template x-if="oauthStatus && oauthStatus.in_docker && !oauthStatus.own_session && loginStep === null">
         <div class="field">
             <div class="field-label">
-                <div class="field-title">Token Status</div>
-                <div class="field-description">Current OAuth token state.</div>
+                <div class="field-title">Container Login Required</div>
+                <div class="field-description">
+                    The container needs its own independent session so Refresh Now works without affecting your Mac's Claude Code.
+                </div>
             </div>
             <div class="field-control">
-                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                    <template x-if="!oauthStatus">
-                        <span style="color: #888;">Loading...</span>
-                    </template>
-                    <template x-if="oauthStatus">
-                        <span style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                            <span style="width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0;"
-                                  :style="'background:' + statusColor()"></span>
-                            <span x-text="oauthStatus.status" style="font-weight: 600; text-transform: capitalize;"
-                                  :style="'color:' + statusColor()"></span>
-                            <template x-if="oauthStatus.expires_in_minutes > 0">
-                                <span style="color: #aaa; font-size: 13px;"
-                                      x-text="'(' + oauthStatus.expires_in_minutes + ' min remaining)'"></span>
-                            </template>
-                            <template x-if="oauthStatus.subscription_type && oauthStatus.subscription_type !== 'unknown'">
-                                <span style="background: #333; border-radius: 4px; padding: 2px 7px; font-size: 12px; color: #ddd;"
-                                      x-text="oauthStatus.subscription_type"></span>
-                            </template>
-                            <template x-if="oauthStatus.in_docker">
-                                <span style="background: #1a3a5c; border-radius: 4px; padding: 2px 7px; font-size: 12px; color: #7ec8e3;">Docker</span>
-                            </template>
-                        </span>
-                    </template>
-                    <button @click="forceRefresh()" :disabled="refreshing"
-                            style="padding: 4px 14px; border-radius: 4px; border: 1px solid #555; background: #2a2a2a; color: #ddd; cursor: pointer; font-size: 13px;">
-                        <span x-text="refreshing ? 'Refreshing...' : 'Refresh Now'"></span>
-                    </button>
-                    <button @click="loadStatus()"
-                            style="padding: 4px 10px; border-radius: 4px; border: 1px solid #555; background: #2a2a2a; color: #999; cursor: pointer; font-size: 13px;">↻</button>
-                </div>
-                <template x-if="oauthStatus && oauthStatus.message">
-                    <div style="margin-top: 8px; color: #ff9800; font-size: 13px;" x-text="oauthStatus.message"></div>
+                <button @click="startLogin()"
+                        style="padding:6px 18px;border-radius:4px;border:1px solid #4c8af5;background:#1a2a3a;color:#7ec8e3;cursor:pointer;font-size:13px;">
+                    Connect Container with Claude
+                </button>
+                <template x-if="loginError">
+                    <div style="margin-top:6px;color:#f44336;font-size:13px;" x-text="loginError"></div>
                 </template>
             </div>
         </div>
+    </template>
 
-        <template x-if="oauthStatus && oauthStatus.in_docker && !oauthStatus.cli_installed">
-            <div class="field">
-                <div class="field-label">
-                    <div class="field-title">Claude CLI</div>
-                    <div class="field-description">Claude CLI is not installed in this container.</div>
-                </div>
-                <div class="field-control">
-                    <button @click="installCli()" :disabled="installing"
-                            style="padding: 6px 18px; border-radius: 4px; border: 1px solid #4caf50; background: #1a3a1a; color: #4caf50; cursor: pointer; font-size: 13px;">
-                        <span x-text="installing ? 'Installing Node.js + Claude CLI...' : 'Install Claude CLI'"></span>
-                    </button>
-                    <div style="margin-top: 6px; color: #888; font-size: 12px;">Installs nodejs, npm, and @anthropic-ai/claude-code (~2 min)</div>
-                </div>
-            </div>
-        </template>
-
-        <template x-if="oauthStatus && oauthStatus.in_docker && oauthStatus.status === 'unavailable'">
-            <div class="field">
-                <div class="field-label">
-                    <div class="field-title">First-time Docker Setup</div>
-                    <div class="field-description">No credentials found. Add these to your .env once to bootstrap.</div>
-                </div>
-                <div class="field-control">
-                    <div style="background: #1a1a1a; border: 1px solid #444; border-radius: 4px; padding: 10px; font-family: monospace; font-size: 12px; color: #ccc; line-height: 1.8;">
-                        ANTHROPIC_OAUTH_ACCESS_TOKEN=sk-ant-oat01-...<br>
-                        ANTHROPIC_OAUTH_REFRESH_TOKEN=sk-ant-ort01-...<br>
-                        ANTHROPIC_OAUTH_EXPIRES_AT=1234567890000<br>
-                        ANTHROPIC_OAUTH_SUBSCRIPTION_TYPE=max
-                    </div>
-                    <div style="margin-top: 6px; color: #888; font-size: 12px;">
-                        Get these values from the Mac Agent Zero instance (check the status panel there).
-                        After the first successful refresh, they are persisted in <code>usr/.claude-oauth-creds.json</code> and env vars are no longer needed.
-                    </div>
-                </div>
-            </div>
-        </template>
-
+    <template x-if="loginStep === 'authorize'">
         <div class="field">
             <div class="field-label">
-                <div class="field-title">How it works</div>
+                <div class="field-title">Step 1: Authorize</div>
             </div>
-            <div class="field-control">
-                <ol style="color: #aaa; font-size: 13px; line-height: 1.8; margin: 0; padding-left: 18px;">
-                    <li><strong>Mac:</strong> Reads token from macOS Keychain. Persists full credentials to <code>usr/.claude-oauth-creds.json</code>.</li>
-                    <li><strong>Docker:</strong> Re-hydrates <code>~/.claude/.credentials.json</code> from the bind-mounted cache on every start. Installs Claude CLI automatically.</li>
-                    <li><strong>Both:</strong> Runs <code>claude -p . --model claude-haiku-4-5</code> to trigger token refresh when near expiry. Token injected as <code>API_KEY_ANTHROPIC_OAUTH</code>.</li>
-                    <li>Set provider to <strong>Anthropic (OAuth)</strong> in model settings. No API key needed.</li>
-                </ol>
+            <div class="field-control" style="display:flex;flex-direction:column;gap:10px;">
+                <div style="font-size:13px;color:#ccc;">Open this URL in your browser while logged in to claude.ai:</div>
+                <a :href="authUrl" target="_blank"
+                   style="word-break:break-all;font-size:12px;color:#7ec8e3;background:#1a2a3a;padding:8px;border-radius:4px;border:1px solid #2a4a6a;display:block;" x-text="authUrl"></a>
+                <div style="font-size:13px;color:#ccc;">After authorizing, you'll land on a <code>platform.claude.com</code> page. Copy the <code>code</code> value from the URL bar (it looks like <code>code=A1B2C3...</code>) and paste it below:</div>
+                <input type="text" x-model="loginCode" placeholder="Paste the authorization code here..."
+                       style="padding:6px 10px;border-radius:4px;border:1px solid #555;background:#1a1a1a;color:#ddd;font-family:monospace;font-size:13px;width:100%;box-sizing:border-box;" />
+                <div style="display:flex;gap:8px;">
+                    <button @click="completeLogin()"
+                            style="padding:6px 18px;border-radius:4px;border:1px solid #4caf50;background:#1a3a1a;color:#4caf50;cursor:pointer;font-size:13px;">
+                        Complete Login
+                    </button>
+                    <button @click="loginStep=null;authUrl=null;loginCode='';loginError=null"
+                            style="padding:6px 14px;border-radius:4px;border:1px solid #555;background:#2a2a2a;color:#999;cursor:pointer;font-size:13px;">
+                        Cancel
+                    </button>
+                </div>
+                <template x-if="loginError">
+                    <div style="color:#f44336;font-size:13px;" x-text="loginError"></div>
+                </template>
             </div>
         </div>
+    </template>
 
+    <template x-if="loginStep === 'done'">
+        <div class="field">
+            <div class="field-label"><div class="field-title">Login Complete</div></div>
+            <div class="field-control">
+                <span style="color:#4caf50;font-size:14px;">✓ Container has its own independent session. Refresh Now works without affecting your Mac.</span>
+            </div>
+        </div>
+    </template>
+
+    <div class="field">
+        <div class="field-label"><div class="field-title">How it works</div></div>
+        <div class="field-control">
+            <ol style="color:#aaa;font-size:13px;line-height:1.8;margin:0;padding-left:18px;">
+                <li><strong>Mac:</strong> Reads token from macOS Keychain independently.</li>
+                <li><strong>Container:</strong> Has its own OAuth session after one-time login. Auto-refreshes every ~8h using its own tokens — never touches Mac credentials.</li>
+                <li><strong>Provider:</strong> Set to <strong>Anthropic (OAuth)</strong> in model settings.</li>
+            </ol>
+        </div>
     </div>
+</div>
 </body>
 </html>
